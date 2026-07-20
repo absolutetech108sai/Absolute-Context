@@ -151,6 +151,13 @@ export interface QueryPipeline {
 export interface BuildIndexOptions {
   rootDir?: string;
   incremental?: boolean;
+  /** Only index under these top-level directories (e.g. ['apps','packages','scripts']).
+   *  Omit to index everything. Focuses a code engine on actual source. */
+  includeDirs?: string[];
+  /** Extra directory names to skip (merged with built-in ignores). */
+  excludeDirs?: string[];
+  /** Safety valve: stop after this many records. */
+  maxRecords?: number;
 }
 
 export interface BuildIndexResult {

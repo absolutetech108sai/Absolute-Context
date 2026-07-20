@@ -10,7 +10,7 @@ import type {
 import { loadConfig, resolveIndexPath } from './config.ts';
 import { tokenize } from './tokenizer.ts';
 import { createEmbeddingProvider } from './embeddings/index.ts';
-import { buildInvertedIndex, precomputeTokenData, retrieveCandidates, type RecordTokenData } from './inverted-index.ts';
+import { buildSearchStructures, retrieveCandidates, type RecordTokenData } from './inverted-index.ts';
 import { bm25ScorePrecomputed } from './bm25.ts';
 import { scoreVectorCandidates } from './vector-search.ts';
 import { fuseWithRRF, weightedSumFusion } from './fusion.ts';
@@ -56,9 +56,9 @@ export function initializeEngine(rootDir: string = process.cwd()): EngineState {
     average_lexical_length: (manifest.average_lexical_length ?? 1) as number,
   };
 
-  // Pre-build inverted index and token data (one-time cost)
-  const invertedIndex = buildInvertedIndex(records);
-  const tokenData = precomputeTokenData(records);
+  // Pre-build inverted index + token data in a single tokenization pass
+  // (one-time startup cost; avoids tokenizing the corpus twice).
+  const { index: invertedIndex, tokenData } = buildSearchStructures(records);
 
   const cache = new SearchCache({
     maxEntries: config.cache_max_entries,

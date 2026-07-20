@@ -8,7 +8,11 @@ demo/out/
 
 # Index data (large, regenerated)
 context-index/
+test-index-platformos/
 *.lance/
+
+# Test artifacts
+test-output.log
 
 # Environment
 .env

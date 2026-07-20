@@ -5,32 +5,43 @@
 import type { IndexRecord, InvertedIndex, PostingEntry } from './types.ts';
 import { tokenize, createTokenCountMap } from './tokenizer.ts';
 
-/** Pre-computed per-record token data for fast scoring. */
+/** Per-record token data pre-computed at startup. Only the fields the fast
+ *  query path actually consumes: BM25 needs tokenCounts + tokenTotal, and
+ *  resultBonus needs conceptTokenSet. (tokenArray/tokenSet are deliberately
+ *  NOT pre-computed — allocating them for every record costs ~40% of startup
+ *  for zero benefit on the precomputed BM25 path.) */
 export interface RecordTokenData {
   tokenCounts: Map<string, number>;
   tokenTotal: number;
-  tokenArray: string[];
-  tokenSet: Set<string>;
   conceptTokenSet: Set<string>;
 }
 
 /**
- * Build an inverted index from index records.
- * Called ONCE at server startup. Tokenizes each record exactly once.
+ * Build BOTH the inverted index and per-record token data in a SINGLE
+ * tokenization pass over the corpus. This is the hot path of engine startup
+ * — doing it in one pass (instead of tokenizing every record twice) roughly
+ * halves cold-start time on large repos.
  */
-export function buildInvertedIndex(records: IndexRecord[]): InvertedIndex {
+export function buildSearchStructures(records: IndexRecord[]): {
+  index: InvertedIndex;
+  tokenData: RecordTokenData[];
+} {
   const postings = new Map<string, PostingEntry[]>();
   const docLengths: number[] = new Array(records.length);
+  const tokenData: RecordTokenData[] = new Array(records.length);
   let totalLength = 0;
 
   for (let docId = 0; docId < records.length; docId += 1) {
-    const tokens = tokenize(records[docId]!.search_text);
-    const counts = createTokenCountMap(tokens);
-    const docLength = tokens.length;
+    const record = records[docId]!;
+    const tokenArray = tokenize(record.search_text);
+    const tokenCounts = createTokenCountMap(tokenArray);
+    const docLength = tokenArray.length;
+
     docLengths[docId] = docLength;
     totalLength += docLength;
 
-    for (const [token, tf] of counts.entries()) {
+    // Posting lists for the inverted index
+    for (const [token, tf] of tokenCounts.entries()) {
       let postingList = postings.get(token);
       if (!postingList) {
         postingList = [];
@@ -38,6 +49,18 @@ export function buildInvertedIndex(records: IndexRecord[]): InvertedIndex {
       }
       postingList.push({ docId, tf });
     }
+
+    // Concept tokens (only when present — usually empty)
+    const conceptTokenSet = new Set<string>();
+    if (record.concept_text) {
+      for (const token of tokenize(record.concept_text)) {
+        conceptTokenSet.add(token);
+        if (token.endsWith('s') && token.length > 3) conceptTokenSet.add(token.slice(0, -1));
+        else if (token.length > 2) conceptTokenSet.add(`${token}s`);
+      }
+    }
+
+    tokenData[docId] = { tokenCounts, tokenTotal: docLength, conceptTokenSet };
   }
 
   // Pre-compute IDF for each term
@@ -49,38 +72,23 @@ export function buildInvertedIndex(records: IndexRecord[]): InvertedIndex {
   }
 
   return {
-    postings,
-    idf,
-    docLengths,
-    avgDocLength: docCount > 0 ? totalLength / docCount : 1,
-    docCount,
+    index: {
+      postings,
+      idf,
+      docLengths,
+      avgDocLength: docCount > 0 ? totalLength / docCount : 1,
+      docCount,
+    },
+    tokenData,
   };
 }
 
 /**
- * Pre-compute token data for all records (called once at startup).
- * Eliminates re-tokenization during scoring.
+ * Build an inverted index from index records.
+ * Called ONCE at server startup. Tokenizes each record exactly once.
  */
-export function precomputeTokenData(records: IndexRecord[]): RecordTokenData[] {
-  return records.map((record) => {
-    const tokenArray = tokenize(record.search_text);
-    const tokenCounts = createTokenCountMap(tokenArray);
-    const tokenTotal = tokenArray.length;
-    const tokenSet = new Set(tokenArray);
-
-    // Pre-compute concept token variants for fast bonus scoring
-    const conceptTokenSet = new Set<string>();
-    if (record.concept_text) {
-      for (const token of tokenize(record.concept_text)) {
-        conceptTokenSet.add(token);
-        // Add simple plural/singular variants
-        if (token.endsWith('s') && token.length > 3) conceptTokenSet.add(token.slice(0, -1));
-        else if (token.length > 2) conceptTokenSet.add(`${token}s`);
-      }
-    }
-
-    return { tokenCounts, tokenTotal, tokenArray, tokenSet, conceptTokenSet };
-  });
+export function buildInvertedIndex(records: IndexRecord[]): InvertedIndex {
+  return buildSearchStructures(records).index;
 }
 
 /** splitmix32-style integer mixer. Bijective on 32-bit ints, so as the
