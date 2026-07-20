@@ -83,6 +83,15 @@ export function precomputeTokenData(records: IndexRecord[]): RecordTokenData[] {
   });
 }
 
+/** splitmix32-style integer mixer. Bijective on 32-bit ints, so as the
+ *  counter increments the output is uniformly distributed — unlike a raw
+ *  LCG whose residues mod docCount can collapse into a short cycle. */
+function mix32(x: number): number {
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
 /**
  * Retrieve candidate document IDs from the inverted index.
  * Returns doc IDs that match at least one query token, ranked by
@@ -114,15 +123,17 @@ export function retrieveCandidates(
     .slice(0, maxCandidates)
     .map(([docId]) => docId);
 
-  // Add random sample for semantic recall (catches docs with zero lexical overlap)
+  // Add a deterministic pseudo-random sample for semantic recall
+  // (catches docs with zero lexical overlap). mix32 on an incrementing
+  // counter gives uniform residues mod docCount; the iteration cap
+  // guarantees termination even in pathological cases.
   if (randomSampleSize > 0 && index.docCount > sorted.length) {
     const existing = new Set(sorted);
     let added = 0;
-    // Deterministic pseudo-random based on query tokens for reproducibility
-    let seed = queryTokens.reduce((acc, t) => acc + t.length * 31, 7);
-    while (added < randomSampleSize && existing.size < index.docCount) {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      const docId = seed % index.docCount;
+    const seed = queryTokens.reduce((acc, t) => acc + t.length * 31, 7);
+    const maxIter = index.docCount * 4; // hard safety cap
+    for (let iter = 0; iter < maxIter && added < randomSampleSize && existing.size < index.docCount; iter += 1) {
+      const docId = mix32(seed + iter) % index.docCount;
       if (!existing.has(docId)) {
         existing.add(docId);
         sorted.push(docId);

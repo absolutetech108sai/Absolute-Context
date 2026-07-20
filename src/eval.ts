@@ -4,18 +4,21 @@
 import type { EvalExpectation, EvalResult, EvalDetail } from './types.ts';
 import { search } from './searcher.ts';
 
-/** Default eval queries covering all 5 intents. */
+/** Default eval queries. These target the retrieval-engine concepts that
+ *  exist in any indexed codebase of this project, so the suite produces
+ *  meaningful numbers out of the box. Swap in queries that match YOUR
+ *  corpus for a real benchmark. */
 export const DEFAULT_EVAL_QUERIES: EvalExpectation[] = [
-  { query: 'authentication middleware', expected_file: 'auth' },
-  { query: 'budget enforcement ledger', expected_file: 'budget' },
-  { query: 'schema migration', expected_file: 'schema' },
-  { query: 'rate limit', expected_file: 'rate-limit' },
-  { query: 'temporal workflow', expected_file: 'workflow' },
-  { query: 'embedding provider', expected_file: 'embed' },
-  { query: 'error handling kernel', expected_file: 'error' },
-  { query: 'feature flags', expected_file: 'flag' },
-  { query: 'DLP guard', expected_file: 'dlp' },
-  { query: 'idempotency store', expected_file: 'idempotency' },
+  { query: 'embedding provider', expected_file: 'embedding' },
+  { query: 'reciprocal rank fusion', expected_file: 'fusion' },
+  { query: 'inverted index posting list', expected_file: 'inverted-index' },
+  { query: 'bm25 scoring', expected_file: 'bm25' },
+  { query: 'query intent classification', expected_file: 'scoring' },
+  { query: 'search result cache', expected_file: 'cache' },
+  { query: 'tokenize text', expected_file: 'tokenizer' },
+  { query: 'reranker', expected_file: 'reranker' },
+  { query: 'vector cosine similarity', expected_file: 'vector-search' },
+  { query: 'build context index', expected_file: 'indexer' },
 ];
 
 /** Compute NDCG@K for a single query. */

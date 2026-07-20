@@ -190,6 +190,15 @@ export async function search(options: SearchOptions): Promise<SearchResult[]> {
     fused = await reranker.rerank(options.query, fused, limit);
   }
 
+  // 11b. Collapse multiple chunks from the same file — keep the top-scoring
+  // chunk per file so results show distinct files, not the same file 3×.
+  const seenFiles = new Set<string>();
+  fused = fused.filter((c) => {
+    if (seenFiles.has(c.file_path)) return false;
+    seenFiles.add(c.file_path);
+    return true;
+  });
+
   // 12. Format results
   const results: SearchResult[] = fused.slice(0, limit).map((c) => ({
     file_path: c.file_path,
